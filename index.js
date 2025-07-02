@@ -6,13 +6,11 @@ import errorHandler from './middleware/errorHandler.js';
 
 const app = express();
 
-// Логирование всех запросов
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
   next();
 });
 
-// Настройки CORS
 app.use(cors({
   origin: [
     'http://localhost:5173', 
@@ -25,28 +23,23 @@ app.use(cors({
 
 app.use(express.json());
 
-// Проверка соединения с БД
 sequelize.authenticate()
-  .then(() => console.log('✅ Database connected'))
+  .then(() => console.log(' Database connected'))
   .catch(err => {
-    console.error('❌ Database connection error:', err);
+    console.error(' Database connection error:', err);
     process.exit(1);
   });
 
-// Синхронизация моделей
 sequelize.sync({ alter: true })
-  .then(() => console.log('✅ Database synced'))
-  .catch(err => console.error('❌ Database sync error:', err));
+  .then(() => console.log(' Database synced'))
+  .catch(err => console.error(' Database sync error:', err));
 
-// Основные роуты
 app.use('/api', router);
 
-// Health check endpoint
 app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'OK', timestamp: new Date() });
 });
 
-// Обработка 404
 app.use((req, res) => {
   res.status(404).json({ 
     error: 'Not Found',
@@ -55,7 +48,6 @@ app.use((req, res) => {
   });
 });
 
-// Обработка ошибок
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;

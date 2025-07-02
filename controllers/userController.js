@@ -24,14 +24,12 @@ class UserController {
     try {
       const { email, password } = req.body;
 
-      // Валидация
       if (!email?.trim() || !password?.trim()) {
         return next(ApiError.badRequest('Email и пароль обязательны'));
       }
 
       const normalizedEmail = email.trim().toLowerCase();
 
-      // Поиск пользователя
       const user = await User.findOne({ 
         where: { email: normalizedEmail } 
       });
@@ -40,25 +38,21 @@ class UserController {
         return next(ApiError.notFound('Пользователь не найден'));
       }
 
-      // Проверка пароля
       const isPasswordValid = await bcrypt.compare(password, user.password);
       if (!isPasswordValid) {
         return next(ApiError.badRequest('Неверный пароль'));
       }
 
-      // Генерация токенов
       const accessToken = generateJwt(user.id, user.email, user.role);
       const refreshToken = generateRefreshToken(user.id, user.email, user.role);
 
-      // Обновление токена в БД
       await Token.upsert({
         user_id: user.id,
         refresh_token: refreshToken
       });
 
-      // Установка куки
       res.cookie('refreshToken', refreshToken, {
-        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 дней
+        maxAge: 30 * 24 * 60 * 60 * 1000, 
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'none'
@@ -89,7 +83,6 @@ class UserController {
 
       const normalizedEmail = email.trim().toLowerCase();
 
-      // Проверка существующего пользователя
       const candidate = await User.findOne({ 
         where: { email: normalizedEmail } 
       });
@@ -98,27 +91,22 @@ class UserController {
         return next(ApiError.badRequest('Пользователь уже существует'));
       }
 
-      // Хеширование пароля
       const hashPassword = await bcrypt.hash(password, 5);
       
-      // Создание пользователя
       const user = await User.create({
         email: normalizedEmail,
         password: hashPassword,
         role: 'USER'
       });
 
-      // Генерация токенов
       const accessToken = generateJwt(user.id, user.email, user.role);
       const refreshToken = generateRefreshToken(user.id, user.email, user.role);
 
-      // Сохранение токена
       await Token.create({
         user_id: user.id,
         refresh_token: refreshToken
       });
 
-      // Установка куки
       res.cookie('refreshToken', refreshToken, {
         maxAge: 30 * 24 * 60 * 60 * 1000,
         httpOnly: true,
@@ -149,13 +137,11 @@ class UserController {
         return next(ApiError.unauthorized('Не авторизован'));
       }
 
-      // Верификация токена
       const decoded = jwt.verify(refreshToken, process.env.SECRET_KEY);
       if (!decoded) {
         return next(ApiError.unauthorized('Недействительный токен'));
       }
 
-      // Проверка токена в БД
       const tokenFromDb = await Token.findOne({
         where: { refresh_token: refreshToken }
       });
@@ -164,23 +150,19 @@ class UserController {
         return next(ApiError.unauthorized('Токен не найден'));
       }
 
-      // Поиск пользователя
       const user = await User.findByPk(decoded.id);
       if (!user) {
         return next(ApiError.unauthorized('Пользователь не найден'));
       }
 
-      // Генерация новых токенов
       const newAccessToken = generateJwt(user.id, user.email, user.role);
       const newRefreshToken = generateRefreshToken(user.id, user.email, user.role);
 
-      // Обновление токена в БД
       await Token.update(
         { refresh_token: newRefreshToken },
         { where: { refresh_token: refreshToken } }
       );
 
-      // Установка нового куки
       res.cookie('refreshToken', newRefreshToken, {
         maxAge: 30 * 24 * 60 * 60 * 1000,
         httpOnly: true,
@@ -211,12 +193,10 @@ class UserController {
         return next(ApiError.badRequest('Токен отсутствует'));
       }
 
-      // Удаление токена из БД
       await Token.destroy({ 
         where: { refresh_token: refreshToken } 
       });
 
-      // Очистка куки
       res.clearCookie('refreshToken');
 
       return res.json({ message: 'Выход выполнен успешно' });
@@ -229,7 +209,6 @@ class UserController {
 
   async check(req, res, next) {
     try {
-      // Генерация нового access токена
       const accessToken = generateJwt(
         req.user.id, 
         req.user.email, 
