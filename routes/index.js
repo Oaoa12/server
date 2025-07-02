@@ -6,7 +6,7 @@ import likeRouter from './likeRouter.js';
 
 const router = Router();
 
-router.use('/user', userRouter);
+router.use('/user', userRouter);        
 router.use('/favorites', favoriteRouter);
 router.use('/comments', commentRouter);
 router.use('/likes', likeRouter);
