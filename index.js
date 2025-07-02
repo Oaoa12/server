@@ -5,9 +5,10 @@ import router from './routes/index.js';
 import errorHandler from './middleware/errorHandler.js';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 const app = express();
 
+// Настройки CORS
 app.use(cors({
   origin: [
     'http://localhost:5173',
@@ -17,24 +18,23 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
+app.use(express.json());
+
+// Прокси для Obrut
 app.use(
   '/proxy/obrut',
   createProxyMiddleware({
     target: 'https://92d73433.obrut.show',
     changeOrigin: true,
-    pathRewrite: {
-      '^/proxy/obrut': '',
-    },
+    pathRewrite: { '^/proxy/obrut': '' },
     onError: (err, req, res) => {
       console.error('Proxy error:', err);
       res.status(500).json({ message: 'Ошибка проксирования запроса' });
-    },
-    onProxyReq: (proxyReq, req, res) => {
-      console.log('Proxy request to:', proxyReq.path);
     }
   })
 );
 
+// Основные роуты
 app.use('/api', router);
 app.use(errorHandler);
 
