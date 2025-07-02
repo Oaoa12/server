@@ -3,100 +3,41 @@ import jwt from 'jsonwebtoken';
 import { User, Token } from '../models/models.js';
 import ApiError from '../error/apiError.js';
 
-// Генерация JWT токенов
-const generateJwt = (id, email, login, role) => {
+const generateJwt = (id, email, role) => {
   return jwt.sign(
-    { id, email, login, role },
+    { id, email, role },
     process.env.SECRET_KEY,
-    { expiresIn: '24h' }
+    { expiresIn: '1h' }
   );
 };
 
-// Генерация refresh токена
-const generateRefreshToken = (id, email, login, role) => {
+const generateRefreshToken = (id, email, role) => {
   return jwt.sign(
-    { id, email, login, role },
+    { id, email, role },
     process.env.SECRET_KEY,
     { expiresIn: '30d' }
   );
 };
 
 class UserController {
-  // Регистрация пользователя
-  async registration(req, res, next) {
-    try {
-      const { email, login, password } = req.body;
-      
-      // Валидация входных данных
-      if (!email || !login || !password) {
-        return next(ApiError.badRequest('Все поля обязательны для заполнения'));
-      }
-
-      // Проверка на существующего пользователя
-      const candidate = await User.findOne({ where: { email } });
-      if (candidate) {
-        return next(ApiError.badRequest('Пользователь с таким email уже существует'));
-      }
-
-      // Хеширование пароля
-      const hashPassword = await bcrypt.hash(password, 5);
-      
-      // Создание пользователя
-      const user = await User.create({ 
-        email, 
-        login, 
-        password: hashPassword 
-      });
-
-      // Генерация токенов
-      const accessToken = generateJwt(user.id, user.email, user.login, user.role);
-      const refreshToken = generateRefreshToken(user.id, user.email, user.login, user.role);
-
-      // Сохранение refresh токена
-      await Token.create({ 
-        user_id: user.id, 
-        refresh_token: refreshToken 
-      });
-
-      // Установка refresh токена в cookie
-      res.cookie('refreshToken', refreshToken, {
-        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 дней
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'none'
-      });
-
-      // Возвращаем данные пользователя и токены
-      return res.json({
-        accessToken,
-        user: {
-          id: user.id,
-          email: user.email,
-          login: user.login,
-          role: user.role
-        }
-      });
-
-    } catch (e) {
-      console.error('Ошибка регистрации:', e);
-      return next(ApiError.internal('Ошибка при регистрации'));
-    }
-  }
-
-  // Авторизация пользователя
   async login(req, res, next) {
     try {
       const { email, password } = req.body;
 
-      // Валидация входных данных
-      if (!email || !password) {
+      // Валидация
+      if (!email?.trim() || !password?.trim()) {
         return next(ApiError.badRequest('Email и пароль обязательны'));
       }
 
+      const normalizedEmail = email.trim().toLowerCase();
+
       // Поиск пользователя
-      const user = await User.findOne({ where: { email } });
+      const user = await User.findOne({ 
+        where: { email: normalizedEmail } 
+      });
+      
       if (!user) {
-        return next(ApiError.badRequest('Пользователь не найден'));
+        return next(ApiError.notFound('Пользователь не найден'));
       }
 
       // Проверка пароля
@@ -106,17 +47,78 @@ class UserController {
       }
 
       // Генерация токенов
-      const accessToken = generateJwt(user.id, user.email, user.login, user.role);
-      const refreshToken = generateRefreshToken(user.id, user.email, user.login, user.role);
+      const accessToken = generateJwt(user.id, user.email, user.role);
+      const refreshToken = generateRefreshToken(user.id, user.email, user.role);
 
-      // Обновление refresh токена
-      await Token.destroy({ where: { user_id: user.id } });
-      await Token.create({ 
-        user_id: user.id, 
-        refresh_token: refreshToken 
+      // Обновление токена в БД
+      await Token.upsert({
+        user_id: user.id,
+        refresh_token: refreshToken
       });
 
-      // Установка refresh токена в cookie
+      // Установка куки
+      res.cookie('refreshToken', refreshToken, {
+        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 дней
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'none'
+      });
+
+      return res.json({
+        accessToken,
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role
+        }
+      });
+
+    } catch (err) {
+      console.error('Login error:', err);
+      return next(ApiError.internal('Ошибка сервера'));
+    }
+  }
+
+  async registration(req, res, next) {
+    try {
+      const { email, password } = req.body;
+
+      if (!email?.trim() || !password?.trim()) {
+        return next(ApiError.badRequest('Email и пароль обязательны'));
+      }
+
+      const normalizedEmail = email.trim().toLowerCase();
+
+      // Проверка существующего пользователя
+      const candidate = await User.findOne({ 
+        where: { email: normalizedEmail } 
+      });
+      
+      if (candidate) {
+        return next(ApiError.badRequest('Пользователь уже существует'));
+      }
+
+      // Хеширование пароля
+      const hashPassword = await bcrypt.hash(password, 5);
+      
+      // Создание пользователя
+      const user = await User.create({
+        email: normalizedEmail,
+        password: hashPassword,
+        role: 'USER'
+      });
+
+      // Генерация токенов
+      const accessToken = generateJwt(user.id, user.email, user.role);
+      const refreshToken = generateRefreshToken(user.id, user.email, user.role);
+
+      // Сохранение токена
+      await Token.create({
+        user_id: user.id,
+        refresh_token: refreshToken
+      });
+
+      // Установка куки
       res.cookie('refreshToken', refreshToken, {
         maxAge: 30 * 24 * 60 * 60 * 1000,
         httpOnly: true,
@@ -124,27 +126,25 @@ class UserController {
         sameSite: 'none'
       });
 
-      // Возвращаем данные пользователя и токены
-      return res.json({
+      return res.status(201).json({
         accessToken,
         user: {
           id: user.id,
           email: user.email,
-          login: user.login,
           role: user.role
         }
       });
 
-    } catch (e) {
-      console.error('Ошибка авторизации:', e);
-      return next(ApiError.internal('Ошибка при авторизации'));
+    } catch (err) {
+      console.error('Registration error:', err);
+      return next(ApiError.internal('Ошибка регистрации'));
     }
   }
 
-  // Обновление токенов
   async refresh(req, res, next) {
     try {
       const { refreshToken } = req.cookies;
+      
       if (!refreshToken) {
         return next(ApiError.unauthorized('Не авторизован'));
       }
@@ -155,23 +155,24 @@ class UserController {
         return next(ApiError.unauthorized('Недействительный токен'));
       }
 
-      // Поиск пользователя и токена
-      const tokenFromDb = await Token.findOne({ 
-        where: { refresh_token: refreshToken } 
+      // Проверка токена в БД
+      const tokenFromDb = await Token.findOne({
+        where: { refresh_token: refreshToken }
       });
       
       if (!tokenFromDb) {
         return next(ApiError.unauthorized('Токен не найден'));
       }
 
+      // Поиск пользователя
       const user = await User.findByPk(decoded.id);
       if (!user) {
         return next(ApiError.unauthorized('Пользователь не найден'));
       }
 
       // Генерация новых токенов
-      const newAccessToken = generateJwt(user.id, user.email, user.login, user.role);
-      const newRefreshToken = generateRefreshToken(user.id, user.email, user.login, user.role);
+      const newAccessToken = generateJwt(user.id, user.email, user.role);
+      const newRefreshToken = generateRefreshToken(user.id, user.email, user.role);
 
       // Обновление токена в БД
       await Token.update(
@@ -179,7 +180,7 @@ class UserController {
         { where: { refresh_token: refreshToken } }
       );
 
-      // Установка нового refresh токена
+      // Установка нового куки
       res.cookie('refreshToken', newRefreshToken, {
         maxAge: 30 * 24 * 60 * 60 * 1000,
         httpOnly: true,
@@ -192,18 +193,16 @@ class UserController {
         user: {
           id: user.id,
           email: user.email,
-          login: user.login,
           role: user.role
         }
       });
 
-    } catch (e) {
-      console.error('Ошибка обновления токена:', e);
-      return next(ApiError.unauthorized('Ошибка при обновлении токена'));
+    } catch (err) {
+      console.error('Refresh error:', err);
+      return next(ApiError.unauthorized('Ошибка обновления токена'));
     }
   }
 
-  // Выход из системы
   async logout(req, res, next) {
     try {
       const { refreshToken } = req.cookies;
@@ -213,27 +212,27 @@ class UserController {
       }
 
       // Удаление токена из БД
-      await Token.destroy({ where: { refresh_token: refreshToken } });
+      await Token.destroy({ 
+        where: { refresh_token: refreshToken } 
+      });
 
-      // Очистка cookie
+      // Очистка куки
       res.clearCookie('refreshToken');
 
       return res.json({ message: 'Выход выполнен успешно' });
 
-    } catch (e) {
-      console.error('Ошибка выхода:', e);
+    } catch (err) {
+      console.error('Logout error:', err);
       return next(ApiError.internal('Ошибка при выходе'));
     }
   }
 
-  // Проверка авторизации
   async check(req, res, next) {
     try {
       // Генерация нового access токена
       const accessToken = generateJwt(
         req.user.id, 
         req.user.email, 
-        req.user.login, 
         req.user.role
       );
 
@@ -242,14 +241,13 @@ class UserController {
         user: {
           id: req.user.id,
           email: req.user.email,
-          login: req.user.login,
           role: req.user.role
         }
       });
 
-    } catch (e) {
-      console.error('Ошибка проверки авторизации:', e);
-      return next(ApiError.internal('Ошибка при проверке авторизации'));
+    } catch (err) {
+      console.error('Auth check error:', err);
+      return next(ApiError.internal('Ошибка проверки авторизации'));
     }
   }
 }
