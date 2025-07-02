@@ -3,49 +3,60 @@ import sequelize from './db.js';
 import cors from 'cors';
 import router from './routes/index.js';
 import errorHandler from './middleware/errorHandler.js';
-import { createProxyMiddleware } from 'http-proxy-middleware';
 
-const PORT = process.env.PORT || 5000;
 const app = express();
+
+// Логирование всех запросов
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+  next();
+});
 
 // Настройки CORS
 app.use(cors({
-  origin: [
-    'http://localhost:5173',
-    'https://client-cinema.netlify.app'
-  ],
+  origin: ['http://localhost:5173', 'https://client-cinema.netlify.app'],
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 app.use(express.json());
 
-// Прокси для Obrut
-app.use(
-  '/proxy/obrut',
-  createProxyMiddleware({
-    target: 'https://92d73433.obrut.show',
-    changeOrigin: true,
-    pathRewrite: { '^/proxy/obrut': '' },
-    onError: (err, req, res) => {
-      console.error('Proxy error:', err);
-      res.status(500).json({ message: 'Ошибка проксирования запроса' });
-    }
-  })
-);
+// Проверка соединения с БД
+sequelize.authenticate()
+  .then(() => console.log('✅ Database connected'))
+  .catch(err => {
+    console.error('❌ Database connection error:', err);
+    process.exit(1);
+  });
+
+// Синхронизация моделей
+sequelize.sync({ alter: true })
+  .then(() => console.log('✅ Database synced'))
+  .catch(err => console.error('❌ Database sync error:', err));
 
 // Основные роуты
 app.use('/api', router);
+
+// Health check
+app.get('/health', (req, res) => res.status(200).send('OK'));
+
+// Обработка 404
+app.use((req, res) => {
+  console.error(`❌ Route not found: ${req.method} ${req.path}`);
+  res.status(404).json({ error: 'Route not found' });
+});
+
+// Обработка ошибок
 app.use(errorHandler);
 
-const start = async () => {
-  try {
-    await sequelize.authenticate();
-    await sequelize.sync();
-    app.listen(PORT, () => console.log(`Server started on port ${PORT}`));
-  } catch (e) {
-    console.error('Server startup error:', e);
-  }
-};
-
-start();
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log('🔍 Available routes:');
+  console.log('POST /api/user/registration');
+  console.log('POST /api/user/login');
+  console.log('POST /api/user/refresh');
+  console.log('POST /api/user/logout');
+  console.log('GET /api/user/auth');
+});
