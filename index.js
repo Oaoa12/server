@@ -9,7 +9,7 @@ const PORT = 5000;
 const app = express();
 
 app.use(cors({
-  origin: ['http://localhost:5173', 'https://your-netlify-site.netlify.app'], // Добавь домен Netlify
+  origin: ['http://localhost:5173', 'https://client-cinema.netlify.app/'],
   credentials: true,
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
